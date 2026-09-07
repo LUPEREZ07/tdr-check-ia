@@ -112,8 +112,8 @@ $$;
 
 alter table public.tdr_analysis_cache enable row level security;
 revoke all on table public.tdr_analysis_cache from anon, authenticated;
-revoke all on function public.get_tdr_analysis_cache(text, text) from public;
-revoke all on function public.save_tdr_analysis_cache(text, text, jsonb, jsonb, text, text) from public;
+revoke all on function public.get_tdr_analysis_cache(text, text) from anon, public;
+revoke all on function public.save_tdr_analysis_cache(text, text, jsonb, jsonb, text, text) from anon, public;
 grant execute on function public.get_tdr_analysis_cache(text, text) to authenticated;
 grant execute on function public.save_tdr_analysis_cache(text, text, jsonb, jsonb, text, text) to authenticated;
 
@@ -131,7 +131,7 @@ as $$
   order by u.last_sign_in_at desc nulls last, u.created_at asc;
 $$;
 
-revoke all on function public.list_registered_tdr_users() from public;
+revoke all on function public.list_registered_tdr_users() from anon, public;
 grant execute on function public.list_registered_tdr_users() to authenticated;
 
 -- Carga inicial: conserva como canónico el registro más reciente por documento.
