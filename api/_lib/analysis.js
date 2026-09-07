@@ -26,8 +26,10 @@ const TYPE_ALIASES = {
   incongruencias: 'incongruencia',
 }
 
+export const MAX_TDR_CHARACTERS = 240000
+
 const LIMITS = {
-  maxChars: 60000,
+  maxChars: MAX_TDR_CHARACTERS,
   maxFindings: 40,
 }
 
