@@ -29,7 +29,7 @@ const TYPE_ALIASES = {
 export const MAX_TDR_CHARACTERS = 240000
 // Increment when the review protocol changes so cached reports from an older
 // protocol are never presented as if they had been produced by this one.
-export const ANALYSIS_VERSION = '2026-09-07-rigorous-v1'
+export const ANALYSIS_VERSION = '2026-09-07-rigorous-v2'
 
 const LIMITS = {
   maxChars: MAX_TDR_CHARACTERS,
