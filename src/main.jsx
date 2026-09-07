@@ -11,6 +11,7 @@ import { authHeaders, supabase } from './lib/supabase.js'
 import './styles.css'
 
 const SAMPLE_TDR = '1. OBJETO\nContratar el servicio de acompañamiento técnico para implementar un sistema de gestión documental en la entidad.\n\n2. FINALIDAD PÚBLICA\nMejorar la trazabilidad y los tiempos de atención de los expedientes institucionales.\n\n3. ACTIVIDADES Y ENTREGABLES\n- Configurar la plataforma y capacitar al equipo usuario.\n- Organizar un taller presencial de natación para 30 participantes.\n- Entregar 4 informes parciales y un informe final.\n\n4. PLAZO DE EJECUCIÓN\nEl servicio tendrá una duración de 30 días calendario. El informe final se entregará en un plazo máximo de 20 días calendario.\n\n5. EQUIPO MÍNIMO\nSe requiere la participación de 2 especialistas durante la ejecución. En el numeral 6 se indica que el equipo estará conformado por 3 especialistas.\n\n6. REQUISITOS DEL POSTOR\nAcreditar experiencia similar de al menos 3 años. La experiencia similar deberá acreditarse con contratos equivalentes, sin definir qué se entiende por similar.\nLa atención será presencial. En las actividades se señala que la atención podrá ser remota.\n\n7. COORDINACIÓN\nEl contratista deberá presentar los avances periódicamente y atender oportunamente las observaciones de la entidad.'
+const MAX_TDR_CHARACTERS = 60000
 
 const TYPE_META = {
   cantidad: { label: 'Cantidad', icon: Users, className: 'type-quantity' },
@@ -175,7 +176,7 @@ function App({ session, onSignOut }) {
 
   const loadHistory = async () => {
     try {
-      const response = await fetch('/api/history?limit=12', { headers: authHeaders(session) })
+      const response = await fetch('/api/history?limit=12', { headers: authHeaders(session), cache: 'no-store' })
       if (!response.ok) throw new Error('history')
       const data = await response.json()
       setHistory(data.items || [])
@@ -222,6 +223,9 @@ function App({ session, onSignOut }) {
       } else {
         value = await file.text()
       }
+      if (value.length > MAX_TDR_CHARACTERS) {
+        throw new Error(`El archivo contiene ${formatNumber(value.length)} caracteres y supera el límite de ${formatNumber(MAX_TDR_CHARACTERS)}. Reduce el documento antes de analizarlo.`)
+      }
       setText(value)
       setFileName(file.name)
       if (!title) setTitle(file.name.replace(/\.(txt|md|docx|pdf)$/i, ''))
@@ -240,9 +244,14 @@ function App({ session, onSignOut }) {
       setError('Pega un TDR de al menos 30 caracteres para iniciar la revisión.')
       return
     }
+    if (text.length > MAX_TDR_CHARACTERS) {
+      setError(`El TDR supera el límite de ${formatNumber(MAX_TDR_CHARACTERS)} caracteres. Reduce el texto antes de analizarlo.`)
+      return
+    }
     setIsAnalyzing(true)
     setFilter('all')
     setSelectedHistoryId(null)
+    setResult(null)
     try {
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -264,9 +273,17 @@ function App({ session, onSignOut }) {
         await supabase?.auth.signOut()
         return
       }
+      if (requestError.status === 413) {
+        setError(`El TDR es demasiado grande para enviarlo. El límite es de ${formatNumber(MAX_TDR_CHARACTERS)} caracteres y no se guardó ningún resultado.`)
+        return
+      }
+      if (requestError.status >= 400) {
+        setError(requestError.message || 'No pudimos guardar la revisión en el historial.')
+        return
+      }
       const local = analyzeLocally(text)
       setResult({ ...local, id: 'local-' + Date.now(), createdAt: new Date().toISOString(), synced: false })
-      setNotice('Revisión local completada. Configura Ollama Cloud para un análisis IA más profundo.')
+      setNotice('Revisión local completada, pero no se pudo sincronizar con el historial. Vuelve a intentarlo cuando la conexión esté disponible.')
     } finally {
       setIsAnalyzing(false)
     }
@@ -276,7 +293,7 @@ function App({ session, onSignOut }) {
     setError('')
     setSelectedHistoryId(item.id)
     try {
-      const response = await fetch('/api/history/' + item.id, { headers: authHeaders(session) })
+      const response = await fetch('/api/history/' + item.id, { headers: authHeaders(session), cache: 'no-store' })
       if (!response.ok) throw new Error('item')
       const detail = await response.json()
       setResult(detail)
@@ -334,7 +351,7 @@ function App({ session, onSignOut }) {
           <div className="panel-heading"><div><span className="section-kicker">01 / DOCUMENTO</span><h2>Tu TDR</h2></div><button className="quiet-button" onClick={loadSample}>Usar ejemplo <ArrowUpRight size={14} /></button></div>
           <div className="input-tabs" role="tablist" aria-label="Origen del documento"><button className={mode === 'paste' ? 'active' : ''} onClick={() => setMode('paste')} role="tab"><Paperclip size={15} /> Pegar texto</button><button className={mode === 'upload' ? 'active' : ''} onClick={() => { setMode('upload'); fileInputRef.current?.click() }} role="tab"><Upload size={15} /> Cargar archivo</button></div>
           <input ref={fileInputRef} type="file" accept=".txt,.md,.docx,.pdf,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden onChange={(event) => readFile(event.target.files?.[0])} />
-          {mode === 'upload' && !text ? <button className={'drop-zone ' + (dragging ? 'dragging' : '')} onClick={() => fileInputRef.current?.click()} onDragOver={(event) => { event.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={handleDrop}><span className="upload-icon"><Upload size={21} /></span><strong>Arrastra tu archivo aquí</strong><span>o haz clic para buscar · .txt, .md, .docx, .pdf</span></button> : <div className="textarea-wrap"><textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="Pega aquí el contenido completo de tu TDR…" aria-label="Contenido del TDR" /><div className="textarea-footer"><span>{fileName ? <><FileText size={13} /> {fileName}</> : 'El contenido se procesa de forma segura'}</span><span>{formatNumber(text.length)} / 60 000</span></div></div>}
+          {mode === 'upload' && !text ? <button className={'drop-zone ' + (dragging ? 'dragging' : '')} onClick={() => fileInputRef.current?.click()} onDragOver={(event) => { event.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={handleDrop}><span className="upload-icon"><Upload size={21} /></span><strong>Arrastra tu archivo aquí</strong><span>o haz clic para buscar · .txt, .md, .docx, .pdf</span></button> : <div className="textarea-wrap"><textarea value={text} maxLength={MAX_TDR_CHARACTERS} onChange={(event) => setText(event.target.value)} placeholder="Pega aquí el contenido completo de tu TDR…" aria-label="Contenido del TDR" /><div className="textarea-footer"><span>{fileName ? <><FileText size={13} /> {fileName}</> : 'El contenido se procesa de forma segura'}</span><span>{formatNumber(text.length)} / {formatNumber(MAX_TDR_CHARACTERS)}</span></div></div>}
           <div className="title-field"><label htmlFor="title">Nombre del análisis <span>(opcional)</span></label><input id="title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ej. Servicio de mantenimiento 2025" /></div>
           {error && <div className="inline-message error"><AlertTriangle size={16} /> {error}<button onClick={() => setError('')} aria-label="Cerrar mensaje"><X size={14} /></button></div>}
           {notice && <div className="inline-message notice"><Info size={16} /> {notice}</div>}
