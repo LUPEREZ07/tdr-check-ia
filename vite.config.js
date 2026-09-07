@@ -29,37 +29,40 @@ function responseAdapter(res) {
 }
 
 function apiDevMiddleware() {
+  const attachApiMiddleware = (server) => {
+    server.middlewares.use(async (req, res, next) => {
+      if (!req.url?.startsWith('/api/')) return next()
+      const url = new URL(req.url, 'http://localhost')
+      let handler
+      let query = Object.fromEntries(url.searchParams.entries())
+      if (url.pathname === '/api/analyze') {
+        handler = (await import('./api/analyze.js')).default
+      } else if (url.pathname === '/api/history') {
+        handler = (await import('./api/history/index.js')).default
+      } else if (url.pathname.startsWith('/api/history/')) {
+        handler = (await import('./api/history/[id].js')).default
+        query = { ...query, id: decodeURIComponent(url.pathname.split('/').at(-1)) }
+      } else {
+        return next()
+      }
+      try {
+        req.query = query
+        req.body = req.method === 'POST' ? await readJsonBody(req) : {}
+        await handler(req, responseAdapter(res))
+      } catch (error) {
+        if (!res.headersSent) {
+          res.statusCode = error.message === 'Payload demasiado grande' ? 413 : 400
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify({ error: error.message || 'Solicitud inválida.' }))
+        }
+      }
+    })
+  }
+
   return {
     name: 'tdr-check-api-dev',
-    configureServer(server) {
-      server.middlewares.use(async (req, res, next) => {
-        if (!req.url?.startsWith('/api/')) return next()
-        const url = new URL(req.url, 'http://localhost')
-        let handler
-        let query = Object.fromEntries(url.searchParams.entries())
-        if (url.pathname === '/api/analyze') {
-          handler = (await import('./api/analyze.js')).default
-        } else if (url.pathname === '/api/history') {
-          handler = (await import('./api/history/index.js')).default
-        } else if (url.pathname.startsWith('/api/history/')) {
-          handler = (await import('./api/history/[id].js')).default
-          query = { ...query, id: decodeURIComponent(url.pathname.split('/').at(-1)) }
-        } else {
-          return next()
-        }
-        try {
-          req.query = query
-          req.body = req.method === 'POST' ? await readJsonBody(req) : {}
-          await handler(req, responseAdapter(res))
-        } catch (error) {
-          if (!res.headersSent) {
-            res.statusCode = error.message === 'Payload demasiado grande' ? 413 : 400
-            res.setHeader('Content-Type', 'application/json; charset=utf-8')
-            res.end(JSON.stringify({ error: error.message || 'Solicitud inválida.' }))
-          }
-        }
-      })
-    },
+    configureServer: attachApiMiddleware,
+    configurePreviewServer: attachApiMiddleware,
   }
 }
 
@@ -70,6 +73,11 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), apiDevMiddleware()],
     server: {
+      port: 5173,
+      host: '0.0.0.0',
+      allowedHosts: ['.ngrok-free.dev'],
+    },
+    preview: {
       port: 5173,
       host: '0.0.0.0',
       allowedHosts: ['.ngrok-free.dev'],
