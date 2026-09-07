@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
 function readJsonBody(req) {
@@ -63,11 +63,16 @@ function apiDevMiddleware() {
   }
 }
 
-export default defineConfig({
-  plugins: [react(), apiDevMiddleware()],
-  server: {
-    port: 5173,
-    host: '0.0.0.0',
-    allowedHosts: ['.ngrok-free.dev'],
-  },
+export default defineConfig(({ mode }) => {
+  // Vite exposes VITE_* to the browser, while the local API middleware
+  // reads server variables from process.env just like Vercel Functions.
+  Object.assign(process.env, loadEnv(mode, process.cwd(), ''))
+  return {
+    plugins: [react(), apiDevMiddleware()],
+    server: {
+      port: 5173,
+      host: '0.0.0.0',
+      allowedHosts: ['.ngrok-free.dev'],
+    },
+  }
 })

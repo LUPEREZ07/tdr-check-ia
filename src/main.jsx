@@ -7,6 +7,7 @@ import {
   Sparkles, Target, Upload, Users, X,
 } from 'lucide-react'
 import { analyzeLocally } from './lib/clientFallback.js'
+import { authHeaders, supabase } from './lib/supabase.js'
 import './styles.css'
 
 const SAMPLE_TDR = '1. OBJETO\nContratar el servicio de acompañamiento técnico para implementar un sistema de gestión documental en la entidad.\n\n2. FINALIDAD PÚBLICA\nMejorar la trazabilidad y los tiempos de atención de los expedientes institucionales.\n\n3. ACTIVIDADES Y ENTREGABLES\n- Configurar la plataforma y capacitar al equipo usuario.\n- Organizar un taller presencial de natación para 30 participantes.\n- Entregar 4 informes parciales y un informe final.\n\n4. PLAZO DE EJECUCIÓN\nEl servicio tendrá una duración de 30 días calendario. El informe final se entregará en un plazo máximo de 20 días calendario.\n\n5. EQUIPO MÍNIMO\nSe requiere la participación de 2 especialistas durante la ejecución. En el numeral 6 se indica que el equipo estará conformado por 3 especialistas.\n\n6. REQUISITOS DEL POSTOR\nAcreditar experiencia similar de al menos 3 años. La experiencia similar deberá acreditarse con contratos equivalentes, sin definir qué se entiende por similar.\nLa atención será presencial. En las actividades se señala que la atención podrá ser remota.\n\n7. COORDINACIÓN\nEl contratista deberá presentar los avances periódicamente y atender oportunamente las observaciones de la entidad.'
@@ -84,7 +85,79 @@ function HistoryItem({ item, active, onClick }) {
   </button>
 }
 
-function App() {
+function getRedirectUrl() {
+  return import.meta.env.VITE_SITE_URL || window.location.origin
+}
+
+function AuthGate({ children }) {
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [isSignup, setIsSignup] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    if (!supabase) {
+      setError('Faltan las variables públicas de Supabase en el frontend.')
+      setLoading(false)
+      return undefined
+    }
+    let mounted = true
+    supabase.auth.getSession().then(({ data }) => {
+      if (mounted) {
+        setSession(data.session)
+        setLoading(false)
+      }
+    })
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession)
+      setLoading(false)
+    })
+    return () => {
+      mounted = false
+      listener.subscription.unsubscribe()
+    }
+  }, [])
+
+  const handleAuth = async (event) => {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    if (password.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres.')
+      return
+    }
+    setBusy(true)
+    try {
+      const response = isSignup
+        ? await supabase.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: getRedirectUrl() } })
+        : await supabase.auth.signInWithPassword({ email: email.trim(), password })
+      if (response.error) throw response.error
+      if (isSignup && !response.data.session) {
+        setNotice('Cuenta creada. Si el proyecto solicita confirmación, revisa tu correo antes de ingresar.')
+      } else {
+        setNotice('Sesión iniciada correctamente.')
+      }
+    } catch (authError) {
+      setError(authError.message || 'No pudimos completar la autenticación.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const signOut = () => supabase?.auth.signOut()
+
+  if (loading) return <div className="auth-screen"><div className="auth-card auth-loading"><LoaderCircle size={22} className="spin" /> Verificando tu sesión…</div></div>
+  if (!supabase) return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-mark"><Sparkles size={16} fill="currentColor" /></span><strong>TDR Check <em>IA</em></strong></div><h1>Configuración pendiente</h1><p>Agrega `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` al entorno del frontend para iniciar sesión.</p>{error && <div className="auth-error"><AlertTriangle size={16} /> {error}</div>}</div></div>
+  if (session) return children(session, signOut)
+
+  return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-mark"><Sparkles size={16} fill="currentColor" /></span><strong>TDR Check <em>IA</em></strong></div><span className="section-kicker">ACCESO SEGURO</span><h1>{isSignup ? 'Crea tu cuenta' : 'Ingresa a tu espacio'}</h1><p>{isSignup ? 'Guarda tus revisiones y consulta solo tus propios análisis.' : 'Tus documentos y resultados están aislados de los demás usuarios.'}</p><form className="auth-form" onSubmit={handleAuth}><label htmlFor="auth-email">Correo electrónico</label><input id="auth-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu correo" required /><label htmlFor="auth-password">Contraseña</label><input id="auth-password" type="password" autoComplete={isSignup ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 6 caracteres" minLength="6" required />{error && <div className="auth-error"><AlertTriangle size={16} /> {error}</div>}{notice && <div className="auth-notice"><Check size={16} /> {notice}</div>}<button className="analyze-button auth-submit" type="submit" disabled={busy}>{busy ? <><LoaderCircle size={17} className="spin" /> Procesando…</> : isSignup ? 'Crear cuenta' : 'Ingresar'} <span className="button-arrow">↗</span></button></form><button className="auth-switch" onClick={() => { setIsSignup(!isSignup); setError(''); setNotice('') }}>{isSignup ? 'Ya tengo una cuenta' : 'Crear una cuenta nueva'}</button><small className="auth-disclaimer">La autenticación protege el historial; la revisión siempre requiere criterio humano.</small></div></div>
+}
+
+function App({ session, onSignOut }) {
   const [text, setText] = useState('')
   const [title, setTitle] = useState('')
   const [fileName, setFileName] = useState('')
@@ -102,7 +175,7 @@ function App() {
 
   const loadHistory = async () => {
     try {
-      const response = await fetch('/api/history?limit=12')
+      const response = await fetch('/api/history?limit=12', { headers: authHeaders(session) })
       if (!response.ok) throw new Error('history')
       const data = await response.json()
       setHistory(data.items || [])
@@ -113,7 +186,7 @@ function App() {
     }
   }
 
-  useEffect(() => { loadHistory() }, [])
+  useEffect(() => { loadHistory() }, [session])
 
   const filteredFindings = useMemo(() => {
     if (!result?.findings) return []
@@ -173,14 +246,24 @@ function App() {
     try {
       const response = await fetch('/api/analyze', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders(session) },
         body: JSON.stringify({ text, title: title.trim() || 'TDR sin título' }),
       })
-      if (!response.ok) throw new Error('api')
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        const apiError = new Error(payload.error || 'No pudimos completar la revisión.')
+        apiError.status = response.status
+        throw apiError
+      }
       const data = await response.json()
       setResult(data)
       await loadHistory()
-    } catch {
+    } catch (requestError) {
+      if (requestError.status === 401) {
+        setError('Tu sesión expiró. Ingresa nuevamente para continuar.')
+        await supabase?.auth.signOut()
+        return
+      }
       const local = analyzeLocally(text)
       setResult({ ...local, id: 'local-' + Date.now(), createdAt: new Date().toISOString(), synced: false })
       setNotice('Revisión local completada. Configura Ollama Cloud para un análisis IA más profundo.')
@@ -193,7 +276,7 @@ function App() {
     setError('')
     setSelectedHistoryId(item.id)
     try {
-      const response = await fetch('/api/history/' + item.id)
+      const response = await fetch('/api/history/' + item.id, { headers: authHeaders(session) })
       if (!response.ok) throw new Error('item')
       const detail = await response.json()
       setResult(detail)
@@ -237,7 +320,7 @@ function App() {
     <header className="topbar">
       <a className="brand" href="#inicio" aria-label="TDR Check IA, inicio"><span className="brand-mark"><Sparkles size={16} fill="currentColor" /></span><span><strong>TDR Check</strong><em>IA</em></span></a>
       <nav className="main-nav" aria-label="Navegación principal"><a className="nav-link active" href="#analizar">Analizar</a><a className="nav-link" href="#historial">Historial <span className="nav-count">{history.length || '—'}</span></a></nav>
-      <div className="header-note"><ShieldCheck size={16} /> Solo puntos para revisión humana</div>
+      <div className="header-note"><ShieldCheck size={16} /> Solo puntos para revisión humana <span className="user-session">{session?.user?.email}</span><button className="signout-button" onClick={onSignOut}>Salir</button></div>
     </header>
 
     <main id="inicio">
@@ -290,4 +373,4 @@ export default App
 const rootContainer = document.getElementById('root')
 const reactRoot = rootContainer.__tdrCheckRoot || createRoot(rootContainer)
 rootContainer.__tdrCheckRoot = reactRoot
-reactRoot.render(<App />)
+reactRoot.render(<AuthGate>{(session, onSignOut) => <App session={session} onSignOut={onSignOut} />}</AuthGate>)

@@ -26,15 +26,21 @@ La interfaz se abre en `http://localhost:5173`. El servidor de desarrollo incluy
 Copia `.env.example` a `.env` y agrega:
 
 - `OLLAMA_API_KEY` para analizar con Ollama Cloud. El modelo predeterminado es `gpt-oss:120b-cloud`.
-- `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` para persistir el historial en Supabase. La service role key solo se usa en Functions y nunca se incluye en el frontend.
+- `SUPABASE_URL` y `SUPABASE_PUBLISHABLE_KEY` para autenticar las Functions y acceder a Supabase respetando RLS.
 
-Sin credenciales, la interfaz usa una revisión local de respaldo para que el MVP se pueda probar. En producción se recomienda configurar ambos servicios.
+La aplicación requiere iniciar sesión para analizar y consultar el historial. La revisión local de respaldo de IA solo se usa si Ollama Cloud no está configurado; la persistencia siempre se realiza en Supabase.
 
-En Vercel, el archivo SQLite local es temporal por la naturaleza serverless; el historial durable se consulta y guarda en Supabase cuando sus variables están configuradas.
+En Vercel, configura estas variables en el entorno de producción:
+
+- `SUPABASE_URL` y `SUPABASE_PUBLISHABLE_KEY` para las Functions del servidor.
+- `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` para el frontend. La publishable key es segura para el navegador cuando RLS está correctamente configurado.
+- `VITE_SITE_URL` con la URL pública actual. Para el túnel compartido: `https://rural-configure-duvet.ngrok-free.dev`.
 
 ## Supabase
 
-Ejecuta el contenido de [`supabase/schema.sql`](./supabase/schema.sql) en el SQL Editor de tu proyecto. La tabla tiene RLS activado y no expone permisos anónimos; las Functions escriben usando la clave de servidor.
+Ejecuta el contenido de [`supabase/schema.sql`](./supabase/schema.sql) en el proyecto `TDR CHECK IA`. La tabla exige `user_id`, tiene RLS activado y solo permite a cada usuario leer e insertar sus propias filas.
+
+En Authentication > Providers > Email, desactiva **Confirm email** para que el registro permita ingresar sin confirmar el correo. En Authentication > URL Configuration, establece como Site URL `https://rural-configure-duvet.ngrok-free.dev` y agrega esa misma URL a Redirect URLs.
 
 ## Vercel
 
