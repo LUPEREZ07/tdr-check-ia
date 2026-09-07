@@ -37,6 +37,13 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
 }
 
+function formatDateTime(value) {
+  if (!value) return 'Sin conexión registrada'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Sin conexión registrada'
+  return new Intl.DateTimeFormat('es-PE', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}
+
 function formatNumber(value) {
   return new Intl.NumberFormat('es-PE').format(Number(value || 0))
 }
@@ -87,6 +94,14 @@ function HistoryItem({ item, active, onClick, onDelete }) {
     </button>
     <button className="history-delete" onClick={(event) => { event.stopPropagation(); onDelete(item) }} aria-label={'Borrar revisión ' + (item.title || 'sin título')} title="Borrar revisión"><Trash2 size={15} /></button>
   </div>
+}
+
+function RegisteredUserItem({ user }) {
+  const initial = (user.email || '?').slice(0, 1).toUpperCase()
+  return <article className="user-card">
+    <span className="user-avatar">{initial}</span>
+    <div className="user-meta"><strong>{user.email}</strong><small>Última conexión: {formatDateTime(user.lastSignInAt)}</small></div>
+  </article>
 }
 
 function getRedirectUrl() {
@@ -172,6 +187,8 @@ function App({ session, onSignOut }) {
   const [filter, setFilter] = useState('all')
   const [history, setHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(true)
+  const [registeredUsers, setRegisteredUsers] = useState([])
+  const [usersLoading, setUsersLoading] = useState(true)
   const [selectedHistoryId, setSelectedHistoryId] = useState(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -190,7 +207,20 @@ function App({ session, onSignOut }) {
     }
   }
 
-  useEffect(() => { loadHistory() }, [session])
+  const loadRegisteredUsers = async () => {
+    try {
+      const response = await fetch('/api/users', { headers: authHeaders(session), cache: 'no-store' })
+      if (!response.ok) throw new Error('users')
+      const data = await response.json()
+      setRegisteredUsers(data.items || [])
+    } catch {
+      setRegisteredUsers([])
+    } finally {
+      setUsersLoading(false)
+    }
+  }
+
+  useEffect(() => { loadHistory(); loadRegisteredUsers() }, [session])
 
   const filteredFindings = useMemo(() => {
     if (!result?.findings) return []
@@ -357,7 +387,7 @@ function App({ session, onSignOut }) {
     <div className="ambient ambient-one" /><div className="ambient ambient-two" />
     <header className="topbar">
       <a className="brand" href="#inicio" aria-label="TDR Check IA, inicio"><span className="brand-mark"><Sparkles size={16} fill="currentColor" /></span><span><strong>TDR Check</strong><em>IA</em></span></a>
-      <nav className="main-nav" aria-label="Navegación principal"><a className="nav-link active" href="#analizar">Analizar</a><a className="nav-link" href="#historial">Historial <span className="nav-count">{history.length || '—'}</span></a></nav>
+      <nav className="main-nav" aria-label="Navegación principal"><a className="nav-link active" href="#analizar">Analizar</a><a className="nav-link" href="#historial">Historial <span className="nav-count">{history.length || '—'}</span></a><a className="nav-link" href="#usuarios">Usuarios <span className="nav-count">{registeredUsers.length || '—'}</span></a></nav>
       <div className="header-note"><ShieldCheck size={16} /> Solo puntos para revisión humana <span className="user-session">{session?.user?.email}</span><button className="signout-button" onClick={onSignOut}>Salir</button></div>
     </header>
 
@@ -395,6 +425,11 @@ function App({ session, onSignOut }) {
       <section className="history-section" id="historial">
         <div className="history-heading"><div><span className="section-kicker">CONSULTA POSTERIOR</span><h2>Historial reciente</h2></div><span className="history-caption"><History size={15} /> Tus últimos análisis</span></div>
         {historyLoading ? <div className="history-loading"><LoaderCircle size={16} className="spin" /> Cargando historial…</div> : history.length ? <div className="history-list">{history.map((item) => <HistoryItem key={item.id} item={item} active={selectedHistoryId === item.id} onClick={() => loadHistoryItem(item)} onDelete={handleDeleteHistory} />)}</div> : <div className="history-empty"><History size={18} /><span>Aún no hay análisis guardados. Tu primer reporte aparecerá aquí.</span></div>}
+      </section>
+
+      <section className="users-section" id="usuarios">
+        <div className="history-heading"><div><span className="section-kicker">EQUIPO REGISTRADO</span><h2>Usuarios de la plataforma</h2></div><span className="history-caption"><Users size={15} /> {registeredUsers.length} registrados</span></div>
+        {usersLoading ? <div className="history-loading"><LoaderCircle size={16} className="spin" /> Cargando usuarios…</div> : registeredUsers.length ? <div className="users-grid">{registeredUsers.map((user) => <RegisteredUserItem key={user.id} user={user} />)}</div> : <div className="history-empty"><Users size={18} /><span>No hay usuarios registrados para mostrar.</span></div>}
       </section>
     </main>
 

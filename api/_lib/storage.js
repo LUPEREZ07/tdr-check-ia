@@ -164,3 +164,14 @@ export async function deleteAnalysis({ id, accessToken }) {
   if (error) throw error
   return Boolean(data?.length)
 }
+
+export async function listRegisteredUsers({ accessToken }) {
+  const remote = getSupabase(accessToken)
+  const { data, error } = await remote.rpc('list_registered_tdr_users')
+  if (error) throw error
+  return (data || []).map((row) => ({
+    id: row.user_id,
+    email: row.email,
+    lastSignInAt: row.last_sign_in_at,
+  }))
+}

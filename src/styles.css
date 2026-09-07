@@ -206,6 +206,14 @@ blockquote { margin: 15px 0 17px; padding: 11px 12px; border-left: 2px solid rgb
 .history-empty { min-height: 100px; justify-content: flex-start; }
 .history-loading { min-height: 100px; justify-content: flex-start; }
 
+.users-section { margin-top: 58px; padding-top: 26px; border-top: 1px solid var(--line); }
+.users-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 22px; }
+.user-card { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: rgba(13, 28, 42, .52); }
+.user-avatar { display: grid; place-items: center; flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; color: var(--teal); background: rgba(103,224,193,.1); font: 700 12px 'DM Mono', monospace; }
+.user-meta { min-width: 0; }
+.user-meta strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--soft); font-size: 10px; }
+.user-meta small { display: block; margin-top: 4px; color: #708596; font: 9px 'DM Mono', monospace; }
+
 .footer { max-width: 1240px; margin: auto; padding: 25px 30px 29px; display: flex; justify-content: space-between; align-items: center; color: #5f7688; border-top: 1px solid var(--line); font-size: 10px; }
 .footer > span:first-child { color: var(--soft); font-weight: 700; }
 .footer-version { font: 9px 'DM Mono', monospace; }
@@ -227,6 +235,7 @@ blockquote { margin: 15px 0 17px; padding: 11px 12px; border-left: 2px solid rgb
   .empty-results { margin: 55px auto 26px; }
   .findings-list { grid-template-columns: 1fr; }
   .history-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .users-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 520px) {
@@ -245,6 +254,7 @@ blockquote { margin: 15px 0 17px; padding: 11px 12px; border-left: 2px solid rgb
   .results-heading { align-items: flex-start; display: block; }
   .results-tools { justify-content: space-between; margin-top: 15px; }
   .history-list { grid-template-columns: 1fr; }
+  .users-grid { grid-template-columns: 1fr; }
   .history-caption { display: none; }
   .footer { padding: 22px 20px; display: grid; gap: 9px; }
   .footer-version { display: none; }

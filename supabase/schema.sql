@@ -97,6 +97,23 @@ revoke all on function public.save_tdr_analysis_cache(text, text, jsonb, jsonb, 
 grant execute on function public.get_tdr_analysis_cache(text) to authenticated;
 grant execute on function public.save_tdr_analysis_cache(text, text, jsonb, jsonb, text) to authenticated;
 
+-- Solo expone a usuarios autenticados el correo y la última conexión.
+create or replace function public.list_registered_tdr_users()
+returns table(user_id uuid, email text, last_sign_in_at timestamptz)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select u.id, u.email, u.last_sign_in_at
+  from auth.users u
+  where u.email is not null
+  order by u.last_sign_in_at desc nulls last, u.created_at asc;
+$$;
+
+revoke all on function public.list_registered_tdr_users() from public;
+grant execute on function public.list_registered_tdr_users() to authenticated;
+
 -- Carga inicial: conserva como canónico el registro más reciente por documento.
 insert into public.tdr_analysis_cache(content_hash, findings, summary, engine, created_at)
 select distinct on (content_hash) content_hash, findings, summary, engine, created_at
