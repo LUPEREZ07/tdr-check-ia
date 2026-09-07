@@ -2,7 +2,7 @@ import { analyzeTdr } from './_lib/analysis.js'
 import { saveAnalysis } from './_lib/storage.js'
 import { getAuthenticatedRequest, AuthenticationError } from './_lib/auth.js'
 
-export const config = { runtime: 'nodejs20.x', maxDuration: 60 }
+export const config = { runtime: 'nodejs', maxDuration: 60 }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido.' })

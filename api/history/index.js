@@ -1,7 +1,7 @@
 import { listAnalyses } from '../_lib/storage.js'
 import { getAuthenticatedRequest, AuthenticationError } from '../_lib/auth.js'
 
-export const config = { runtime: 'nodejs20.x' }
+export const config = { runtime: 'nodejs' }
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Método no permitido.' })
