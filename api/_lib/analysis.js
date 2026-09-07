@@ -100,13 +100,15 @@ function extractJson(text) {
 }
 
 function lineFor(text, position) {
-  const before = text.slice(0, Math.max(0, position))
-  const lines = before.split(/\r?\n/)
-  const rawLine = lines.at(-1) || ''
+  const safePosition = Math.max(0, position)
+  const lineStart = text.lastIndexOf('\n', Math.max(0, safePosition - 1)) + 1
+  const lineEnd = text.indexOf('\n', safePosition)
+  const rawLine = text.slice(lineStart, lineEnd >= 0 ? lineEnd : text.length)
+  const previousLines = text.slice(0, lineStart).split(/\r?\n/)
   const section = rawLine.match(/^\s*((?:\d+(?:\.\d+)*|[IVX]+)[.)]?\s+[^:]{2,80})[:.]?/i)
   return {
     line: cleanText(rawLine || text.slice(Math.max(0, position - 120), position + 220), 700),
-    section: cleanText(section?.[1] || lines.slice(-2, -1)[0] || 'Sección no identificada', 180),
+    section: cleanText(section?.[1] || previousLines.at(-1) || 'Sección no identificada', 180),
   }
 }
 
@@ -135,6 +137,141 @@ function buildSummary(findings) {
     incongruencies: findings.filter((item) => item.type === 'incongruencia').length,
     total: findings.length,
   }
+}
+
+const QUANTITY_UNITS = new Map([
+  ['persona', 'personas'],
+  ['personas', 'personas'],
+  ['profesional', 'profesionales'],
+  ['profesionales', 'profesionales'],
+  ['especialista', 'especialistas'],
+  ['especialistas', 'especialistas'],
+  ['bien', 'bienes'],
+  ['bienes', 'bienes'],
+  ['unidad', 'unidades'],
+  ['unidades', 'unidades'],
+  ['equipo', 'equipos'],
+  ['equipos', 'equipos'],
+  ['local', 'locales'],
+  ['locales', 'locales'],
+  ['entregable', 'entregables'],
+  ['entregables', 'entregables'],
+  ['muestra', 'muestras'],
+  ['muestras', 'muestras'],
+  ['visita', 'visitas'],
+  ['visitas', 'visitas'],
+])
+
+function crossSection(text, firstIndex, lastIndex) {
+  const first = lineFor(text, firstIndex).section
+  const last = lineFor(text, lastIndex).section
+  return cleanText(first === last ? first : `${first} / ${last}`, 180)
+}
+
+function literalContext(text, index, length = 0) {
+  const start = Math.max(text.lastIndexOf('\n', index - 1), text.lastIndexOf('.', index - 1), text.lastIndexOf(';', index - 1)) + 1
+  const boundaryCandidates = [
+    text.indexOf('\n', index + length),
+    text.indexOf('.', index + length),
+    text.indexOf(';', index + length),
+  ].filter((position) => position >= 0)
+  const end = boundaryCandidates.length ? Math.min(...boundaryCandidates) + 1 : text.length
+  return text.slice(start, end).trim()
+}
+
+function distinctSnippets(items) {
+  return [...new Set(items.map((item) => item.snippet).filter(Boolean))]
+}
+
+function highConfidenceQuantityFindings(text) {
+  const mentions = [...text.matchAll(/\b(\d+(?:[.,]\d+)?)\s+(personas?|profesionales?|especialistas?|bienes?|unidades?|equipos?|locales?|entregables?|muestras?|visitas?)\b/gi)]
+    .map((match) => {
+      const index = match.index ?? 0
+      const context = text.slice(Math.max(0, index - 130), Math.min(text.length, index + match[0].length + 50))
+      return { value: match[1], unit: QUANTITY_UNITS.get(match[2].toLocaleLowerCase()), index, match: match[0], context, snippet: literalContext(text, index, match[0].length) }
+    })
+    .filter((item) => item.unit && /\b(?:se requier\w*|requiere\w*|debe contar|contará con|cantidad de|número de|numero de|total de|mínimo de|mínima de)\b/i.test(item.context))
+  const grouped = new Map()
+  for (const mention of mentions) {
+    const entries = grouped.get(mention.unit) || []
+    entries.push(mention)
+    grouped.set(mention.unit, entries)
+  }
+  const findings = []
+  for (const entries of grouped.values()) {
+    const values = [...new Set(entries.map((item) => item.value))]
+    if (values.length < 2) continue
+    const selected = values.map((value) => entries.find((item) => item.value === value)).filter(Boolean)
+    const first = selected[0]
+    const last = selected.at(-1)
+    const finding = makeFinding(
+      'cantidad',
+      text,
+      first.index,
+      distinctSnippets(selected).join(' / '),
+      `Se observan valores distintos (${values.join(' y ')}) para la cantidad de ${first.unit}.`,
+      'Comparar los numerales citados y dejar una sola cantidad, indicando con claridad a qué etapa o entregable aplica.',
+    )
+    finding.section = crossSection(text, first.index, last.index)
+    findings.push(finding)
+  }
+  return findings
+}
+
+function highConfidenceDeadlineFindings(text) {
+  const mentions = [...text.matchAll(/\b(plazo|duraci[oó]n|vigencia)\b[^\n.;]{0,90}?\b(\d+(?:[.,]\d+)?)\s*(d[ií]as?|semanas?|meses?)\b/gi)]
+    .map((match) => {
+      const index = match.index ?? 0
+      const context = text.slice(Math.max(0, index - 30), Math.min(text.length, index + match[0].length + 65))
+      return { label: 'periodo', value: `${match[2]} ${match[3].toLocaleLowerCase()}`, index, context, snippet: literalContext(text, index, match[0].length) }
+    })
+  const findings = []
+  const values = [...new Set(mentions.map((item) => item.value))]
+  if (values.length < 2) return findings
+  const scopes = ['servicio', 'contrato', 'ejecucion', 'entrega', 'informe', 'reporte']
+  const sharedScope = scopes.find((scope) => mentions.filter((item) => new RegExp(`\\b${scope}\\b`, 'i').test(item.context)).length >= 2)
+  if (!sharedScope) return findings
+  const selected = values.map((value) => mentions.find((item) => item.value === value)).filter(Boolean)
+  const first = selected[0]
+  const last = selected.at(-1)
+  const finding = makeFinding(
+    'plazo',
+    text,
+    first.index,
+    distinctSnippets(selected).join(' / '),
+    `Se observan duraciones diferentes (${values.join(' y ')}) para el mismo ${sharedScope}.`,
+    'Precisar el plazo aplicable, su unidad de medida y el hito desde el cual se computa; revisar todos los numerales relacionados.',
+  )
+  finding.section = crossSection(text, first.index, last.index)
+  findings.push(finding)
+  return findings
+}
+
+function highConfidenceRequirementFindings(text) {
+  const mentions = [...text.matchAll(/\bexperiencia\b[^\n.;]{0,80}?\b(\d+(?:[.,]\d+)?)\s*(años?|anos?|meses?)\b/gi)]
+  const values = [...new Set(mentions.map((item) => `${item[1]} ${item[2].toLocaleLowerCase()}`))]
+  if (values.length < 2) return []
+  const selected = values.map((value) => mentions.find((item) => `${item[1]} ${item[2].toLocaleLowerCase()}` === value)).filter(Boolean)
+  const first = selected[0]
+  const last = selected.at(-1)
+  const finding = makeFinding(
+    'requisito',
+    text,
+    first.index ?? 0,
+    selected.map((item) => item[0]).join(' / '),
+    `El requisito de experiencia aparece con parámetros diferentes (${values.join(' y ')}).`,
+    'Unificar el mínimo exigido y describir cómo se acreditará, incluyendo la definición de experiencia válida.',
+  )
+  finding.section = crossSection(text, first.index ?? 0, last.index ?? first.index ?? 0)
+  return [finding]
+}
+
+function deterministicFindings(text) {
+  return [
+    ...highConfidenceQuantityFindings(text),
+    ...highConfidenceDeadlineFindings(text),
+    ...highConfidenceRequirementFindings(text),
+  ]
 }
 
 function amountFindings(text, findings) {
@@ -277,7 +414,10 @@ export function analyzeLocally(input) {
 }
 
 export function normalizeAnalysis(payload, originalText) {
-  const rawFindings = Array.isArray(payload?.findings) ? payload.findings : []
+  const rawFindings = [
+    ...(Array.isArray(payload?.findings) ? payload.findings : []),
+    ...deterministicFindings(String(originalText ?? '')),
+  ]
   const candidates = rawFindings
     .map((item) => ({
       type: normalizeType(item?.type),
