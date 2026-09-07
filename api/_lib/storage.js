@@ -145,3 +145,22 @@ export async function getAnalysis({ id, accessToken }) {
   if (error) throw error
   return data ? mapRow(data) : null
 }
+
+export async function deleteAnalysis({ id, accessToken }) {
+  const remote = getSupabase(accessToken)
+  const { data: target, error: targetError } = await remote
+    .from('tdr_analyses')
+    .select('content_hash')
+    .eq('id', id)
+    .maybeSingle()
+  if (targetError) throw targetError
+  if (!target) return false
+
+  const { data, error } = await remote
+    .from('tdr_analyses')
+    .delete()
+    .eq('content_hash', target.content_hash)
+    .select('id')
+  if (error) throw error
+  return Boolean(data?.length)
+}

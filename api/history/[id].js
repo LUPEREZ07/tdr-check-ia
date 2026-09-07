@@ -1,4 +1,4 @@
-import { getAnalysis } from '../_lib/storage.js'
+import { deleteAnalysis, getAnalysis } from '../_lib/storage.js'
 import { getAuthenticatedRequest, AuthenticationError } from '../_lib/auth.js'
 
 export const config = { runtime: 'nodejs' }
@@ -6,9 +6,14 @@ export const config = { runtime: 'nodejs' }
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'private, no-store, max-age=0')
   res.setHeader('Vary', 'Authorization')
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Método no permitido.' })
+  if (!['GET', 'DELETE'].includes(req.method)) return res.status(405).json({ error: 'Método no permitido.' })
   try {
     const { accessToken } = await getAuthenticatedRequest(req)
+    if (req.method === 'DELETE') {
+      const deleted = await deleteAnalysis({ id: req.query?.id, accessToken })
+      if (!deleted) return res.status(404).json({ error: 'Análisis no encontrado.' })
+      return res.status(200).json({ deleted: true })
+    }
     const item = await getAnalysis({ id: req.query?.id, accessToken })
     if (!item) return res.status(404).json({ error: 'Análisis no encontrado.' })
     return res.status(200).json(item)

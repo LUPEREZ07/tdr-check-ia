@@ -104,6 +104,14 @@ from public.tdr_analyses
 order by content_hash, created_at desc, id desc
 on conflict (content_hash) do nothing;
 
+-- Homologa los registros históricos existentes con el resultado canónico.
+update public.tdr_analyses a
+set findings = c.findings,
+    summary = c.summary,
+    engine = c.engine
+from public.tdr_analysis_cache c
+where c.content_hash = a.content_hash;
+
 alter table public.tdr_analyses enable row level security;
 
 drop policy if exists "Users can read their own TDR analyses" on public.tdr_analyses;
@@ -128,5 +136,12 @@ create policy "Users can update their own TDR analyses"
   using ((select auth.uid()) = user_id)
   with check ((select auth.uid()) = user_id);
 
+drop policy if exists "Users can delete their own TDR analyses" on public.tdr_analyses;
+create policy "Users can delete their own TDR analyses"
+  on public.tdr_analyses
+  for delete
+  to authenticated
+  using ((select auth.uid()) = user_id);
+
 revoke all on table public.tdr_analyses from anon;
-grant select, insert, update on table public.tdr_analyses to authenticated;
+grant select, insert, update, delete on table public.tdr_analyses to authenticated;

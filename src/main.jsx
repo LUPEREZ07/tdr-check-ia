@@ -4,7 +4,7 @@ import {
   AlertTriangle, ArrowUpRight, CalendarClock, Check, ChevronDown, ChevronRight,
   Clock3, FileText, GitCompareArrows, History, Info, Layers3, LoaderCircle,
   MessageCircleQuestion, Paperclip, Plus, ScanSearch, Search, ShieldCheck,
-  Sparkles, Target, Upload, Users, X,
+  Sparkles, Target, Trash2, Upload, Users, X,
 } from 'lucide-react'
 import { analyzeLocally } from './lib/clientFallback.js'
 import { authHeaders, supabase } from './lib/supabase.js'
@@ -77,13 +77,16 @@ function EmptyResults({ onSample }) {
   </div>
 }
 
-function HistoryItem({ item, active, onClick }) {
+function HistoryItem({ item, active, onClick, onDelete }) {
   const total = item.summary?.total ?? item.findings?.length ?? 0
-  return <button className={'history-item ' + (active ? 'active' : '')} onClick={onClick}>
-    <span className="history-file"><FileText size={16} /></span>
-    <span className="history-meta"><strong>{item.title || 'TDR sin título'}</strong><small>{formatDate(item.createdAt)} · {total} {total === 1 ? 'hallazgo' : 'hallazgos'}</small></span>
-    <ChevronRight size={15} className="history-arrow" />
-  </button>
+  return <div className={'history-item ' + (active ? 'active' : '')}>
+    <button className="history-open" onClick={onClick}>
+      <span className="history-file"><FileText size={16} /></span>
+      <span className="history-meta"><strong>{item.title || 'TDR sin título'}</strong><small>{formatDate(item.createdAt)} · {total} {total === 1 ? 'hallazgo' : 'hallazgos'}</small></span>
+      <ChevronRight size={15} className="history-arrow" />
+    </button>
+    <button className="history-delete" onClick={(event) => { event.stopPropagation(); onDelete(item) }} aria-label={'Borrar revisión ' + (item.title || 'sin título')} title="Borrar revisión"><Trash2 size={15} /></button>
+  </div>
 }
 
 function getRedirectUrl() {
@@ -306,6 +309,23 @@ function App({ session, onSignOut }) {
     }
   }
 
+  const handleDeleteHistory = async (item) => {
+    if (!window.confirm(`¿Borrar la revisión «${item.title || 'TDR sin título'}»?`)) return
+    setError('')
+    try {
+      const response = await fetch('/api/history/' + encodeURIComponent(item.id), { method: 'DELETE', headers: authHeaders(session), cache: 'no-store' })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(payload.error || 'No pudimos borrar esta revisión.')
+      }
+      setHistory((items) => items.filter((historyItem) => historyItem.id !== item.id))
+      if (selectedHistoryId === item.id) reset()
+      setNotice('Revisión eliminada del historial.')
+    } catch (deleteError) {
+      setError(deleteError.message || 'No pudimos borrar esta revisión.')
+    }
+  }
+
   const loadSample = () => {
     setText(SAMPLE_TDR)
     setTitle('TDR implementación documental')
@@ -374,7 +394,7 @@ function App({ session, onSignOut }) {
 
       <section className="history-section" id="historial">
         <div className="history-heading"><div><span className="section-kicker">CONSULTA POSTERIOR</span><h2>Historial reciente</h2></div><span className="history-caption"><History size={15} /> Tus últimos análisis</span></div>
-        {historyLoading ? <div className="history-loading"><LoaderCircle size={16} className="spin" /> Cargando historial…</div> : history.length ? <div className="history-list">{history.map((item) => <HistoryItem key={item.id} item={item} active={selectedHistoryId === item.id} onClick={() => loadHistoryItem(item)} />)}</div> : <div className="history-empty"><History size={18} /><span>Aún no hay análisis guardados. Tu primer reporte aparecerá aquí.</span></div>}
+        {historyLoading ? <div className="history-loading"><LoaderCircle size={16} className="spin" /> Cargando historial…</div> : history.length ? <div className="history-list">{history.map((item) => <HistoryItem key={item.id} item={item} active={selectedHistoryId === item.id} onClick={() => loadHistoryItem(item)} onDelete={handleDeleteHistory} />)}</div> : <div className="history-empty"><History size={18} /><span>Aún no hay análisis guardados. Tu primer reporte aparecerá aquí.</span></div>}
       </section>
     </main>
 
