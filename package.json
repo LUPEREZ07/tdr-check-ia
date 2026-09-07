@@ -1,0 +1,27 @@
+{
+  "name": "tdr-check-ia",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "test:analysis": "node --input-type=module -e \"import('./api/_lib/analysis.js').then(({analyzeLocally}) => console.log(JSON.stringify(analyzeLocally(process.argv[1]), null, 2)))\""
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.57.4",
+    "lucide-react": "0.468.0",
+    "mammoth": "1.9.0",
+    "pdfjs-dist": "6.3.289",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "sql.js": "1.13.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "5.0.2",
+    "eslint": "9.35.0",
+    "vite": "7.1.5"
+  }
+}

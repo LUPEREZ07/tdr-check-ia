@@ -1,0 +1,36 @@
+node_modules/
+dist/
+
+# Variables de entorno y credenciales
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Datos locales y archivos de ejecución
+.data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.vercel/
+.supabase/
+tmp/
+
+# Reportes, cachés y registros
+coverage/
+.cache/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos del sistema y editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
