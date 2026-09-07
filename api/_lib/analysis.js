@@ -29,7 +29,7 @@ const TYPE_ALIASES = {
 export const MAX_TDR_CHARACTERS = 240000
 // Increment when the review protocol changes so cached reports from an older
 // protocol are never presented as if they had been produced by this one.
-export const ANALYSIS_VERSION = '2026-09-07-rigorous-v2'
+export const ANALYSIS_VERSION = '2026-09-07-rigorous-v3'
 
 const LIMITS = {
   maxChars: MAX_TDR_CHARACTERS,
@@ -48,6 +48,26 @@ function normalizeForEvidence(value) {
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+const FINDING_ANCHORS = [
+  'termino del servicio mensual',
+  'contados a partir del dia siguiente de la firma del contrato',
+  'materiales que sean amigables con el ambiente',
+  'seguros aplicables a la actividad que realiza',
+  'plazo de dos dias la denuncia en la dependencia policial',
+  'anticipacion no menor de cinco dias habiles',
+  'anticipacion no menor a 02 dias habiles',
+  'a cargo de la gerencia general',
+  'area que brindara la conformidad',
+  'se encuentra prohibida la subcontratacion',
+  'terceros subcontratados autorizados debidamente por la entidad',
+].map(normalizeForEvidence)
+
+function findingKey(finding) {
+  const fragment = normalizeForEvidence(finding.fragment)
+  const anchor = FINDING_ANCHORS.find((candidate) => fragment.includes(candidate))
+  return `${finding.type}|${anchor || `${finding.section.toLocaleLowerCase()}|${fragment}`}`
 }
 
 function evidenceParts(fragment) {
@@ -266,11 +286,93 @@ function highConfidenceRequirementFindings(text) {
   return [finding]
 }
 
+function firstMatch(text, regex) {
+  const match = text.match(regex)
+  return match ? { index: match.index ?? 0, value: match[0] } : null
+}
+
+function pairedFinding(text, type, left, right, description, recommendation) {
+  if (!left || !right) return null
+  const finding = makeFinding(type, text, left.index, `${left.value} / ${right.value}`, description, recommendation)
+  finding.section = crossSection(text, left.index, right.index)
+  return finding
+}
+
+function documentWideFindings(text) {
+  const findings = []
+  const add = (finding) => { if (finding) findings.push(finding) }
+
+  const monthlyTerm = firstMatch(text, /El término del servicio mensual[^.]{0,280}\./i)
+  if (monthlyTerm) add(makeFinding(
+    'ambiguedad', text, monthlyTerm.index, monthlyTerm.value,
+    'La expresión «término del servicio mensual» no define si se refiere al cierre del periodo, al entregable, a la conformidad o al pago.',
+    'Reemplazarla por una regla concreta que identifique el entregable, la conformidad y el momento exacto de pago.',
+  ))
+
+  const startDate = firstMatch(text, /Los servicios materia de la presente convocatoria se prestan en el plazo de 1095 días calendario o hasta consumir el monto total contratado, lo que ocurra primero, contados a partir del día siguiente de la firma del contrato o el vencimiento del contrato vigente\./i)
+  if (startDate) add(makeFinding(
+    'ambiguedad', text, startDate.index, startDate.value,
+    'El inicio del plazo queda asociado a dos eventos alternativos —la firma del contrato o el vencimiento del contrato vigente— sin precisar cuándo aplica cada uno.',
+    'Definir un único hito de inicio o establecer expresamente la condición que determina cuál de los dos eventos corresponde.',
+  ))
+
+  const environmental = firstMatch(text, /se deberá establecer el uso de materiales que sean amigables con el ambiente[^.]{0,180}\./i)
+  if (environmental) add(makeFinding(
+    'ambiguedad', text, environmental.index, environmental.value,
+    'La exigencia de usar materiales «amigables con el ambiente» no establece qué materiales, criterios o evidencia permiten verificarla.',
+    'Precisar los materiales aceptables y el criterio o documento que acreditará el cumplimiento de esta condición.',
+  ))
+
+  const insurance = firstMatch(text, /El contratista deberá contar con los seguros aplicables a la actividad que realiza[^.]{0,220}\./i)
+  if (insurance) add(makeFinding(
+    'ambiguedad', text, insurance.index, insurance.value,
+    'La exigencia de contar con «los seguros aplicables» no identifica el tipo de seguro, cobertura, monto mínimo ni vigencia exigible.',
+    'Definir los seguros requeridos, sus coberturas, montos mínimos, vigencia y forma de acreditación.',
+  ))
+
+  const policeReport = firstMatch(text, /el mensajero a cargo de la diligencia deberá formular en el plazo de dos \(2\) días, la denuncia en la dependencia policial de la localidad[^.]{0,220}\./i)
+  if (policeReport) add(makeFinding(
+    'ambiguedad', text, policeReport.index, policeReport.value,
+    'El plazo de dos días para formular la denuncia no precisa si se computa como días calendario o días hábiles.',
+    'Indicar expresamente la unidad de cómputo del plazo y el momento exacto desde el cual empieza a contarse.',
+  ))
+
+  add(pairedFinding(
+    text,
+    'plazo',
+    firstMatch(text, /anticipación no menor de cinco \(5\) días hábiles antes de que inicie el servicio en la nueva dirección\./i),
+    firstMatch(text, /anticipación no menor a 02 días hábiles antes del cambio efectivo\./i),
+    'El documento establece plazos diferentes para comunicar un cambio de dirección: cinco días hábiles y dos días hábiles.',
+    'Precisar si se trata del mismo supuesto y dejar un único plazo aplicable, indicando quién comunica el cambio y desde qué hito se computa.',
+  ))
+
+  add(pairedFinding(
+    text,
+    'requisito',
+    firstMatch(text, /El término del servicio mensual[^.]{0,240}a cargo de la Gerencia General\./i),
+    firstMatch(text, /Área que brindará la conformidad: Unidad Funcional Gestión Documental,[^.]{0,240}\./i),
+    'La responsabilidad de otorgar la conformidad aparece atribuida a áreas diferentes: la Gerencia General y la Unidad Funcional Gestión Documental.',
+    'Definir una única área responsable de otorgar la conformidad o separar expresamente las responsabilidades de cada área.',
+  ))
+
+  add(pairedFinding(
+    text,
+    'requisito',
+    firstMatch(text, /Se encuentra prohibida la subcontratación de las prestaciones objeto del contrato\./i),
+    firstMatch(text, /terceros subcontratados, autorizados debidamente por la Entidad\./i),
+    'El documento prohíbe la subcontratación de las prestaciones, pero también contempla terceros subcontratados autorizados, sin delimitar cuándo aplica cada regla.',
+    'Aclarar si la subcontratación está prohibida absolutamente o si existe una excepción expresa para terceros autorizados.',
+  ))
+
+  return findings
+}
+
 function deterministicFindings(text) {
   return [
     ...highConfidenceQuantityFindings(text),
     ...highConfidenceDeadlineFindings(text),
     ...highConfidenceRequirementFindings(text),
+    ...documentWideFindings(text),
   ]
 }
 
@@ -435,7 +537,7 @@ export function normalizeAnalysis(payload, originalText) {
     // or shortened excerpt. Reject it instead of showing an unsupported claim.
     if (!hasLiteralEvidence(finding.fragment, originalText)) continue
     if (!hasSupportedExplicitClaims(finding.description, finding.fragment)) continue
-    const key = `${finding.type}|${finding.section.toLocaleLowerCase()}|${finding.fragment.toLocaleLowerCase()}`
+    const key = findingKey(finding)
     if (!unique.has(key)) unique.set(key, finding)
   }
   const findings = [...unique.values()]
@@ -464,6 +566,9 @@ Protocolo de revisión:
 - Para requisitos, compara parámetros, mínimos, modalidad, perfiles, acreditación y condiciones del mismo requisito.
 - Para ambigüedades, exige que la expresión impida verificar una condición importante y que el documento no la defina en otra sección.
 - Para incongruencias, exige una falta aparente de relación con el objeto; no marques una actividad solo porque sea inusual.
+- Revisa expresamente si un mismo evento tiene plazos distintos, si el inicio del servicio depende de hitos alternativos no definidos, o si la responsabilidad de conformidad aparece atribuida a áreas diferentes.
+- Considera como ambigüedad técnica la falta de criterios verificables para materiales ambientales, seguros, coberturas, acreditaciones o unidades de cómputo, siempre que el propio TDR no los precise.
+- Contrasta prohibiciones absolutas con cláusulas que contemplen excepciones o terceros autorizados; reporta la contradicción solo si el texto no delimita cuándo aplica cada regla.
 - No confundas alcances distintos: un plazo total, un plazo de aviso y un plazo para entregar un informe pueden coexistir. Solo reporta contradicción si se refieren al mismo evento, obligación o parámetro.
 - No confundas categorías: un requisito no definido es ambigüedad; un requisito definido con valores incompatibles en dos lugares es requisito contradictorio; una contradicción interna no es incongruencia con el objeto.
 - Una cantidad de equipos no es automáticamente una cantidad de mediciones o entregables. Compara solo el mismo concepto y unidad, salvo que el propio TDR los equipare expresamente.

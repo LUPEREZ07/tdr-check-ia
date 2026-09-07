@@ -12,6 +12,7 @@ import './styles.css'
 
 const SAMPLE_TDR = '1. OBJETO\nContratar el servicio de acompañamiento técnico para implementar un sistema de gestión documental en la entidad.\n\n2. FINALIDAD PÚBLICA\nMejorar la trazabilidad y los tiempos de atención de los expedientes institucionales.\n\n3. ACTIVIDADES Y ENTREGABLES\n- Configurar la plataforma y capacitar al equipo usuario.\n- Organizar un taller presencial de natación para 30 participantes.\n- Entregar 4 informes parciales y un informe final.\n\n4. PLAZO DE EJECUCIÓN\nEl servicio tendrá una duración de 30 días calendario. El informe final se entregará en un plazo máximo de 20 días calendario.\n\n5. EQUIPO MÍNIMO\nSe requiere la participación de 2 especialistas durante la ejecución. En el numeral 6 se indica que el equipo estará conformado por 3 especialistas.\n\n6. REQUISITOS DEL POSTOR\nAcreditar experiencia similar de al menos 3 años. La experiencia similar deberá acreditarse con contratos equivalentes, sin definir qué se entiende por similar.\nLa atención será presencial. En las actividades se señala que la atención podrá ser remota.\n\n7. COORDINACIÓN\nEl contratista deberá presentar los avances periódicamente y atender oportunamente las observaciones de la entidad.'
 const MAX_TDR_CHARACTERS = 240000
+const CURRENT_REVIEW_VERSION = '2026-09-07-rigorous-v3'
 
 const TYPE_META = {
   cantidad: { label: 'Cantidad', icon: Users, className: 'type-quantity' },
@@ -86,7 +87,7 @@ function EmptyResults({ onSample }) {
 
 function HistoryItem({ item, active, onClick, onDelete }) {
   const total = item.summary?.total ?? item.findings?.length ?? 0
-  const isLegacy = item.reviewVersion === 'legacy-v1'
+  const isLegacy = item.reviewVersion && item.reviewVersion !== CURRENT_REVIEW_VERSION
   return <div className={'history-item ' + (active ? 'active' : '')}>
     <button className="history-open" onClick={onClick}>
       <span className="history-file"><FileText size={16} /></span>
