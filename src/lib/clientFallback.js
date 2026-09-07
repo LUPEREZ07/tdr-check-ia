@@ -1,3 +1,4 @@
+// Respaldo local para mantener la interfaz operativa si el servicio remoto no responde.
 function clean(value, max) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max || 700)
 }
