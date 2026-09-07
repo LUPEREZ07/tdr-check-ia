@@ -64,7 +64,19 @@ export async function saveAnalysis({ title, text, findings, summary, engine, use
   return { id, createdAt, synced: true }
 }
 
-export async function findAnalysisByText({ text, accessToken }) {
+export async function updateAnalysis({ id, findings, summary, engine, accessToken }) {
+  const remote = getSupabase(accessToken)
+  const { data, error } = await remote
+    .from('tdr_analyses')
+    .update({ findings, summary, engine: engine || 'ollama-cloud' })
+    .eq('id', id)
+    .select('*')
+    .maybeSingle()
+  if (error) throw error
+  return data ? mapRow(data) : null
+}
+
+export async function findOwnAnalysisByText({ text, accessToken }) {
   const remote = getSupabase(accessToken)
   const { data, error } = await remote
     .from('tdr_analyses')
@@ -75,6 +87,41 @@ export async function findAnalysisByText({ text, accessToken }) {
     .maybeSingle()
   if (error) throw error
   return data ? mapRow(data) : null
+}
+
+export async function findSharedAnalysisByText({ text, accessToken }) {
+  const remote = getSupabase(accessToken)
+  const { data, error } = await remote.rpc('get_tdr_analysis_cache', {
+    p_content_hash: contentHash(text),
+  })
+  if (error) throw error
+  const row = Array.isArray(data) ? data[0] : data
+  return row
+    ? {
+        findings: row.findings || [],
+        summary: row.summary || {},
+        engine: row.engine || 'ollama-cloud',
+      }
+    : null
+}
+
+export async function saveSharedAnalysis({ text, findings, summary, engine, accessToken }) {
+  const remote = getSupabase(accessToken)
+  const { data, error } = await remote.rpc('save_tdr_analysis_cache', {
+    p_content_hash: contentHash(text),
+    p_tdr_text: text,
+    p_findings: findings,
+    p_summary: summary,
+    p_engine: engine || 'ollama-cloud',
+  })
+  if (error) throw error
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) throw new Error('No se pudo obtener el análisis canónico compartido.')
+  return {
+    findings: row.findings || [],
+    summary: row.summary || {},
+    engine: row.engine || 'ollama-cloud',
+  }
 }
 
 export async function listAnalyses({ accessToken, limit = 20 }) {
