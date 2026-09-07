@@ -240,7 +240,7 @@ export function analyzeLocally(input) {
 
 export function normalizeAnalysis(payload, originalText) {
   const rawFindings = Array.isArray(payload?.findings) ? payload.findings : []
-  const findings = rawFindings
+  const candidates = rawFindings
     .map((item) => ({
       type: normalizeType(item?.type),
       section: cleanText(item?.section || item?.numeral || item?.section_name, 180),
@@ -249,6 +249,20 @@ export function normalizeAnalysis(payload, originalText) {
       recommendation: cleanText(item?.recommendation || item?.suggestion, 1400),
     }))
     .filter((item) => item.type && item.section && item.fragment && item.description && item.recommendation)
+  const source = String(originalText ?? '').replace(/\s+/g, ' ').toLocaleLowerCase()
+  const typeOrder = { cantidad: 1, plazo: 2, requisito: 3, ambiguedad: 4, incongruencia: 5 }
+  const unique = new Map()
+  for (const finding of candidates) {
+    const key = `${finding.type}|${finding.section.toLocaleLowerCase()}|${finding.fragment.toLocaleLowerCase()}`
+    if (!unique.has(key)) unique.set(key, finding)
+  }
+  const findings = [...unique.values()]
+    .sort((left, right) => {
+      const leftPosition = source.indexOf(left.fragment.replace(/\s+/g, ' ').toLocaleLowerCase())
+      const rightPosition = source.indexOf(right.fragment.replace(/\s+/g, ' ').toLocaleLowerCase())
+      const positionDifference = (leftPosition < 0 ? Number.MAX_SAFE_INTEGER : leftPosition) - (rightPosition < 0 ? Number.MAX_SAFE_INTEGER : rightPosition)
+      return positionDifference || typeOrder[left.type] - typeOrder[right.type] || left.section.localeCompare(right.section, 'es') || left.fragment.localeCompare(right.fragment, 'es')
+    })
     .slice(0, LIMITS.maxFindings)
   return { findings, summary: buildSummary(findings), engine: 'ollama-cloud', sourceLength: originalText.length }
 }
@@ -261,6 +275,8 @@ Reglas:
 - Para ambigüedades, reporta expresiones que impiden verificar una condición importante por falta de definición.
 - Para incongruencias, compara el objeto con actividades, entregables y condiciones.
 - El fragmento debe ser literal o casi literal y la sección debe conservar el numeral si existe.
+- Reporta cada punto una sola vez, combina en un mismo hallazgo la evidencia del mismo problema y ordena la respuesta según la aparición en el documento.
+- Solo reporta una inconsistencia cuando existan valores o condiciones explícitamente diferentes; no agregues hallazgos por inferencias débiles.
 - Responde únicamente JSON válido con esta forma: {"findings":[{"type":"cantidad|plazo|requisito|ambiguedad|incongruencia","section":"...","fragment":"...","description":"...","recommendation":"..."}]}`
 
 export async function analyzeWithOllama(input, env = process.env) {
@@ -280,7 +296,7 @@ export async function analyzeWithOllama(input, env = process.env) {
       body: JSON.stringify({
         model: env.OLLAMA_MODEL || 'gpt-oss:120b-cloud',
         stream: false,
-        options: { temperature: 0.1 },
+        options: { temperature: 0, top_p: 1, top_k: 1, seed: 42 },
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: `Revisa este TDR. Conserva los numerales y reporta solo evidencia del texto.\n\n<TDR>\n${text}\n</TDR>` },

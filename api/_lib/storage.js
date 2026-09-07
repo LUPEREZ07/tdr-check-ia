@@ -5,6 +5,18 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+function canonicalizeText(value) {
+  return String(value ?? '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n[ \t]+/g, '\n')
+    .trim()
+}
+
+function contentHash(value) {
+  return crypto.createHash('sha256').update(canonicalizeText(value), 'utf8').digest('hex')
+}
+
 function getSupabase(accessToken) {
   const url = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY
@@ -34,6 +46,7 @@ export async function saveAnalysis({ title, text, findings, summary, engine, use
   const { error } = await remote.from('tdr_analyses').insert({
     id,
     user_id: userId,
+    content_hash: contentHash(text),
     title: title || 'TDR sin título',
     tdr_text: text,
     findings,
@@ -41,19 +54,42 @@ export async function saveAnalysis({ title, text, findings, summary, engine, use
     engine: engine || 'ollama-cloud',
     created_at: createdAt,
   })
-  if (error) throw error
+  if (error) {
+    if (error.code === '23505') {
+      const existing = await findAnalysisByText({ text, accessToken })
+      if (existing) return { id: existing.id, createdAt: existing.createdAt, synced: true, cached: true, analysis: existing }
+    }
+    throw error
+  }
   return { id, createdAt, synced: true }
+}
+
+export async function findAnalysisByText({ text, accessToken }) {
+  const remote = getSupabase(accessToken)
+  const { data, error } = await remote
+    .from('tdr_analyses')
+    .select('*')
+    .eq('content_hash', contentHash(text))
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data ? mapRow(data) : null
 }
 
 export async function listAnalyses({ accessToken, limit = 20 }) {
   const remote = getSupabase(accessToken)
   const { data, error } = await remote
     .from('tdr_analyses')
-    .select('id,title,findings,summary,engine,created_at')
+    .select('id,title,findings,summary,engine,created_at,content_hash')
     .order('created_at', { ascending: false })
     .limit(Math.min(Number(limit) || 20, 50))
   if (error) throw error
-  return (data || []).map(mapRow)
+  const unique = new Map()
+  for (const row of data || []) {
+    if (!unique.has(row.content_hash)) unique.set(row.content_hash, mapRow(row))
+  }
+  return [...unique.values()]
 }
 
 export async function getAnalysis({ id, accessToken }) {

@@ -6,6 +6,7 @@ create table if not exists public.tdr_analyses (
   user_id uuid not null references auth.users(id) on delete cascade,
   title text not null default 'TDR sin título',
   tdr_text text not null,
+  content_hash text not null,
   findings jsonb not null default '[]'::jsonb,
   summary jsonb not null default '{}'::jsonb,
   engine text not null default 'ollama-cloud',
@@ -14,6 +15,9 @@ create table if not exists public.tdr_analyses (
 
 create index if not exists tdr_analyses_user_created_at_idx
   on public.tdr_analyses (user_id, created_at desc);
+
+create index if not exists tdr_analyses_user_content_hash_idx
+  on public.tdr_analyses (user_id, content_hash, created_at desc);
 
 alter table public.tdr_analyses enable row level security;
 

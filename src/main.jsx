@@ -266,6 +266,7 @@ function App({ session, onSignOut }) {
       }
       const data = await response.json()
       setResult(data)
+      if (data.cached) setNotice('Este TDR ya fue revisado. Mostramos el mismo reporte para mantener consistencia.')
       await loadHistory()
     } catch (requestError) {
       if (requestError.status === 401) {
