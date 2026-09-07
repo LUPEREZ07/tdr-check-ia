@@ -34,13 +34,13 @@ En Vercel, configura estas variables en el entorno de producción:
 
 - `SUPABASE_URL` y `SUPABASE_PUBLISHABLE_KEY` para las Functions del servidor.
 - `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` para el frontend. La publishable key es segura para el navegador cuando RLS está correctamente configurado.
-- `VITE_SITE_URL` con la URL pública actual. Para el túnel compartido: `https://rural-configure-duvet.ngrok-free.dev`.
+- `VITE_SITE_URL` con la URL pública actual. En producción: `https://tdr-check-ia-fabricum-curso.vercel.app`.
 
 ## Supabase
 
 Ejecuta el contenido de [`supabase/schema.sql`](./supabase/schema.sql) en el proyecto `TDR CHECK IA`. La tabla exige `user_id`, tiene RLS activado y solo permite a cada usuario leer e insertar sus propias filas.
 
-En Authentication > Providers > Email, desactiva **Confirm email** para que el registro permita ingresar sin confirmar el correo. En Authentication > URL Configuration, establece como Site URL `https://rural-configure-duvet.ngrok-free.dev` y agrega esa misma URL a Redirect URLs.
+En Authentication > Providers > Email, desactiva **Confirm email** para que el registro permita ingresar sin confirmar el correo. En Authentication > URL Configuration, establece como Site URL `https://tdr-check-ia-fabricum-curso.vercel.app` y agrega esa misma URL a Redirect URLs.
 
 ## Vercel
 
