@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   AlertTriangle, ArrowUpRight, CalendarClock, Check, ChevronDown, ChevronRight,
-  Clock3, FileText, GitCompareArrows, History, Info, Layers3, LoaderCircle,
-  MessageCircleQuestion, Paperclip, Plus, ScanSearch, Search, ShieldCheck,
+  Clock3, Eye, EyeOff, FileText, GitCompareArrows, History, Info, Layers3, LoaderCircle,
+  LockKeyhole, Mail, MessageCircleQuestion, Paperclip, Plus, ScanSearch, Search, ShieldCheck,
   Sparkles, Target, Trash2, Upload, Users, X,
 } from 'lucide-react'
 import { analyzeLocally } from './lib/clientFallback.js'
@@ -86,10 +86,11 @@ function EmptyResults({ onSample }) {
 
 function HistoryItem({ item, active, onClick, onDelete }) {
   const total = item.summary?.total ?? item.findings?.length ?? 0
+  const isLegacy = item.reviewVersion === 'legacy-v1'
   return <div className={'history-item ' + (active ? 'active' : '')}>
     <button className="history-open" onClick={onClick}>
       <span className="history-file"><FileText size={16} /></span>
-      <span className="history-meta"><strong>{item.title || 'TDR sin título'}</strong><small>{formatDate(item.createdAt)} · {total} {total === 1 ? 'hallazgo' : 'hallazgos'}</small></span>
+      <span className="history-meta"><strong>{item.title || 'TDR sin título'}</strong><small>{formatDate(item.createdAt)} · {total} {total === 1 ? 'hallazgo' : 'hallazgos'}{isLegacy ? ' · revisión anterior' : ''}</small></span>
       <ChevronRight size={15} className="history-arrow" />
     </button>
     <button className="history-delete" onClick={(event) => { event.stopPropagation(); onDelete(item) }} aria-label={'Borrar revisión ' + (item.title || 'sin título')} title="Borrar revisión"><Trash2 size={15} /></button>
@@ -117,6 +118,7 @@ function AuthGate({ children }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
 
   useEffect(() => {
     if (!supabase) {
@@ -173,7 +175,7 @@ function AuthGate({ children }) {
   if (!supabase) return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-mark"><Sparkles size={16} fill="currentColor" /></span><strong>TDR Check <em>IA</em></strong></div><h1>Configuración pendiente</h1><p>Agrega `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` al entorno del frontend para iniciar sesión.</p>{error && <div className="auth-error"><AlertTriangle size={16} /> {error}</div>}</div></div>
   if (session) return children(session, signOut)
 
-  return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-mark"><Sparkles size={16} fill="currentColor" /></span><strong>TDR Check <em>IA</em></strong></div><span className="section-kicker">ACCESO SEGURO</span><h1>{isSignup ? 'Crea tu cuenta' : 'Ingresa a tu espacio'}</h1><p>{isSignup ? 'Guarda tus revisiones y consulta solo tus propios análisis.' : 'Tus documentos y resultados están aislados de los demás usuarios.'}</p><form className="auth-form" onSubmit={handleAuth}><label htmlFor="auth-email">Correo electrónico</label><input id="auth-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu correo" required /><label htmlFor="auth-password">Contraseña</label><input id="auth-password" type="password" autoComplete={isSignup ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 6 caracteres" minLength="6" required />{error && <div className="auth-error"><AlertTriangle size={16} /> {error}</div>}{notice && <div className="auth-notice"><Check size={16} /> {notice}</div>}<button className="analyze-button auth-submit" type="submit" disabled={busy}>{busy ? <><LoaderCircle size={17} className="spin" /> Procesando…</> : isSignup ? 'Crear cuenta' : 'Ingresar'} <span className="button-arrow">↗</span></button></form><button className="auth-switch" onClick={() => { setIsSignup(!isSignup); setError(''); setNotice('') }}>{isSignup ? 'Ya tengo una cuenta' : 'Crear una cuenta nueva'}</button><small className="auth-disclaimer">La autenticación protege el historial; la revisión siempre requiere criterio humano.</small></div></div>
+  return <div className="auth-screen"><div className="auth-layout"><section className="auth-visual" aria-label="TDR Check IA"><img className="auth-visual-image" src="/login-reference.png" alt="TDR Check IA — Revisa tus TDR con claridad" /><div className="auth-visual-shade" /><div className="auth-visual-note"><span>PLATAFORMA DE REVISIÓN TÉCNICA</span><strong>Decide con evidencia.</strong><small>Identifica los puntos que requieren criterio humano.</small></div></section><section className="auth-form-side"><div className="auth-card"><div className="auth-card-mark"><ShieldCheck size={18} /></div><span className="section-kicker">ACCESO SEGURO</span><h1>{isSignup ? 'Crea tu cuenta' : 'Inicia sesión'}</h1><p>{isSignup ? 'Guarda tus revisiones y consulta solo tus propios análisis.' : 'Accede a tu espacio de revisión.'}</p><form className="auth-form" onSubmit={handleAuth}><div className="auth-field"><label htmlFor="auth-email">Correo electrónico</label><div className="auth-input-wrap"><Mail size={17} /><input id="auth-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu correo" required /></div></div><div className="auth-field"><label htmlFor="auth-password">Contraseña</label><div className="auth-input-wrap"><LockKeyhole size={17} /><input id="auth-password" type={showPassword ? 'text' : 'password'} autoComplete={isSignup ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 6 caracteres" minLength="6" required /><button className="auth-password-toggle" type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></div></div>{error && <div className="auth-error" role="alert"><AlertTriangle size={16} /> {error}</div>}{notice && <div className="auth-notice" role="status"><Check size={16} /> {notice}</div>}<button className="auth-submit" type="submit" disabled={busy}>{busy ? <><LoaderCircle size={17} className="spin" /> Procesando…</> : isSignup ? 'Crear cuenta' : 'Ingresar'} <span className="button-arrow">↗</span></button></form><div className="auth-switch-row"><span>{isSignup ? '¿Ya tienes una cuenta?' : '¿No tienes una cuenta?'}</span><button className="auth-switch" onClick={() => { setIsSignup(!isSignup); setError(''); setNotice(''); setShowPassword(false) }}>{isSignup ? 'Ingresar' : 'Crear una cuenta'}</button></div><small className="auth-disclaimer">La autenticación protege tu historial. La revisión siempre requiere criterio humano.</small></div></section></div></div>
 }
 
 function App({ session, onSignOut }) {
