@@ -27,14 +27,51 @@ const TYPE_ALIASES = {
 }
 
 export const MAX_TDR_CHARACTERS = 240000
+// Increment when the review protocol changes so cached reports from an older
+// protocol are never presented as if they had been produced by this one.
+export const ANALYSIS_VERSION = '2026-09-07-rigorous-v1'
 
 const LIMITS = {
   maxChars: MAX_TDR_CHARACTERS,
-  maxFindings: 40,
+  maxFindings: 100,
 }
 
 function cleanText(value, max = 1400) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+}
+
+function normalizeForEvidence(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function evidenceParts(fragment) {
+  return String(fragment ?? '')
+    .split(/\s+(?:\/|\|)\s+/)
+    .map((part) => normalizeForEvidence(part))
+    .filter(Boolean)
+}
+
+function hasLiteralEvidence(fragment, originalText) {
+  const source = normalizeForEvidence(originalText)
+  const parts = evidenceParts(fragment)
+  return parts.length > 0 && parts.every((part) => part.length >= 12 && source.includes(part))
+}
+
+function hasSupportedExplicitClaims(description, fragment) {
+  const evidence = normalizeForEvidence(fragment)
+  const text = String(description ?? '')
+  const explicitClaims = [
+    ...(text.match(/\b\d+(?:[.,]\d+)?\b/g) || []),
+    ...(text.match(/\b[A-ZÁÉÍÓÚÑ]{2,}(?:[.-]\d+)*\b/g) || []),
+    ...(text.match(/\b[A-ZÁÉÍÓÚÑ]\.\d+(?:\.\d+)*\b/g) || []),
+  ]
+  return explicitClaims.every((claim) => evidence.includes(normalizeForEvidence(claim)))
 }
 
 function normalizeType(value) {
@@ -235,7 +272,8 @@ export function analyzeLocally(input) {
   requirementFindings(text, findings)
   ambiguityFindings(text, findings)
   incongruenceFindings(text, findings)
-  return { findings: findings.slice(0, LIMITS.maxFindings), summary: buildSummary(findings), engine: 'local-fallback' }
+  const normalized = normalizeAnalysis({ findings }, text)
+  return { ...normalized, engine: 'local-fallback' }
 }
 
 export function normalizeAnalysis(payload, originalText) {
@@ -249,17 +287,21 @@ export function normalizeAnalysis(payload, originalText) {
       recommendation: cleanText(item?.recommendation || item?.suggestion, 1400),
     }))
     .filter((item) => item.type && item.section && item.fragment && item.description && item.recommendation)
-  const source = String(originalText ?? '').replace(/\s+/g, ' ').toLocaleLowerCase()
+  const source = normalizeForEvidence(originalText)
   const typeOrder = { cantidad: 1, plazo: 2, requisito: 3, ambiguedad: 4, incongruencia: 5 }
   const unique = new Map()
   for (const finding of candidates) {
+    // The model may return a plausible-sounding explanation with an invented
+    // or shortened excerpt. Reject it instead of showing an unsupported claim.
+    if (!hasLiteralEvidence(finding.fragment, originalText)) continue
+    if (!hasSupportedExplicitClaims(finding.description, finding.fragment)) continue
     const key = `${finding.type}|${finding.section.toLocaleLowerCase()}|${finding.fragment.toLocaleLowerCase()}`
     if (!unique.has(key)) unique.set(key, finding)
   }
   const findings = [...unique.values()]
     .sort((left, right) => {
-      const leftPosition = source.indexOf(left.fragment.replace(/\s+/g, ' ').toLocaleLowerCase())
-      const rightPosition = source.indexOf(right.fragment.replace(/\s+/g, ' ').toLocaleLowerCase())
+      const leftPosition = Math.min(...evidenceParts(left.fragment).map((part) => source.indexOf(part)).filter((position) => position >= 0), Number.MAX_SAFE_INTEGER)
+      const rightPosition = Math.min(...evidenceParts(right.fragment).map((part) => source.indexOf(part)).filter((position) => position >= 0), Number.MAX_SAFE_INTEGER)
       const positionDifference = (leftPosition < 0 ? Number.MAX_SAFE_INTEGER : leftPosition) - (rightPosition < 0 ? Number.MAX_SAFE_INTEGER : rightPosition)
       return positionDifference || typeOrder[left.type] - typeOrder[right.type] || left.section.localeCompare(right.section, 'es') || left.fragment.localeCompare(right.fragment, 'es')
     })
@@ -267,7 +309,7 @@ export function normalizeAnalysis(payload, originalText) {
   return { findings, summary: buildSummary(findings), engine: 'ollama-cloud', sourceLength: originalText.length }
 }
 
-const SYSTEM_PROMPT = `Eres un revisor técnico minucioso de Términos de Referencia para un especialista de abastecimiento público. Lee y compara todo el documento antes de responder. Analiza únicamente estas cinco situaciones:
+const SYSTEM_PROMPT = `Eres un revisor técnico minucioso de Términos de Referencia para un especialista de abastecimiento público. Lee y compara TODO el documento antes de responder; no te limites a sus primeras secciones ni a ejemplos aislados. Analiza únicamente estas cinco situaciones:
 1) cantidad: inconsistencias de cantidades, personas, bienes, locales, entregables u otros valores numéricos;
 2) plazo: inconsistencias de plazos, duraciones o fechas;
 3) requisito: requisitos contradictorios definidos de manera diferente;
@@ -282,10 +324,15 @@ Protocolo de revisión:
 - Para requisitos, compara parámetros, mínimos, modalidad, perfiles, acreditación y condiciones del mismo requisito.
 - Para ambigüedades, exige que la expresión impida verificar una condición importante y que el documento no la defina en otra sección.
 - Para incongruencias, exige una falta aparente de relación con el objeto; no marques una actividad solo porque sea inusual.
+- No confundas alcances distintos: un plazo total, un plazo de aviso y un plazo para entregar un informe pueden coexistir. Solo reporta contradicción si se refieren al mismo evento, obligación o parámetro.
+- No confundas categorías: un requisito no definido es ambigüedad; un requisito definido con valores incompatibles en dos lugares es requisito contradictorio; una contradicción interna no es incongruencia con el objeto.
+- Una cantidad de equipos no es automáticamente una cantidad de mediciones o entregables. Compara solo el mismo concepto y unidad, salvo que el propio TDR los equipare expresamente.
 - Reporta un hallazgo solo si existe evidencia textual suficiente. No inventes datos ni completes vacíos con conocimiento externo.
-- En contradicciones, el fragmento debe incluir las dos formulaciones relevantes o resumirlas literalmente y la descripción debe explicar qué numerales deben compararse.
+- En contradicciones, el fragmento debe incluir literalmente las dos formulaciones relevantes, separadas por « / », y la descripción debe explicar qué numerales deben compararse.
+- Cada fragmento debe ser una cita literal o casi literal verificable en el TDR. La descripción no puede afirmar números, siglas, fechas o parámetros que no aparezcan en ese fragmento.
 - Conserva el numeral o sección exactos. Reporta cada problema una sola vez, combina evidencia del mismo problema y ordena los hallazgos según su primera aparición.
 - No incluyas observaciones legales, de estilo, redacción general, ortografía, presupuesto, mercado o temas distintos de los cinco tipos autorizados.
+- Antes de responder, haz una autoauditoría: recorre de nuevo el documento completo, verifica cada hallazgo contra su fragmento, elimina duplicados y descarta cualquier punto cuya clasificación o evidencia no cumpla estas reglas.
 - Responde únicamente JSON válido con esta forma: {"findings":[{"type":"cantidad|plazo|requisito|ambiguedad|incongruencia","section":"...","fragment":"...","description":"...","recommendation":"..."}]}`
 
 export async function analyzeWithOllama(input, env = process.env) {

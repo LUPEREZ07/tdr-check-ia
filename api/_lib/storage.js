@@ -35,11 +35,12 @@ function mapRow(row) {
     findings: row.findings || [],
     summary: row.summary || {},
     engine: row.engine,
+    reviewVersion: row.analysis_version || 'legacy-v1',
     createdAt: row.created_at,
   }
 }
 
-export async function saveAnalysis({ title, text, findings, summary, engine, userId, accessToken }) {
+export async function saveAnalysis({ title, text, findings, summary, engine, analysisVersion = 'legacy-v1', userId, accessToken }) {
   const id = crypto.randomUUID()
   const createdAt = nowIso()
   const remote = getSupabase(accessToken)
@@ -52,11 +53,12 @@ export async function saveAnalysis({ title, text, findings, summary, engine, use
     findings,
     summary,
     engine: engine || 'ollama-cloud',
+    analysis_version: analysisVersion,
     created_at: createdAt,
   })
   if (error) {
     if (error.code === '23505') {
-      const existing = await findAnalysisByText({ text, accessToken })
+      const existing = await findOwnAnalysisByText({ text, analysisVersion, accessToken })
       if (existing) return { id: existing.id, createdAt: existing.createdAt, synced: true, cached: true, analysis: existing }
     }
     throw error
@@ -64,11 +66,11 @@ export async function saveAnalysis({ title, text, findings, summary, engine, use
   return { id, createdAt, synced: true }
 }
 
-export async function updateAnalysis({ id, findings, summary, engine, accessToken }) {
+export async function updateAnalysis({ id, findings, summary, engine, analysisVersion = 'legacy-v1', accessToken }) {
   const remote = getSupabase(accessToken)
   const { data, error } = await remote
     .from('tdr_analyses')
-    .update({ findings, summary, engine: engine || 'ollama-cloud' })
+    .update({ findings, summary, engine: engine || 'ollama-cloud', analysis_version: analysisVersion })
     .eq('id', id)
     .select('*')
     .maybeSingle()
@@ -76,12 +78,13 @@ export async function updateAnalysis({ id, findings, summary, engine, accessToke
   return data ? mapRow(data) : null
 }
 
-export async function findOwnAnalysisByText({ text, accessToken }) {
+export async function findOwnAnalysisByText({ text, analysisVersion = 'legacy-v1', accessToken }) {
   const remote = getSupabase(accessToken)
   const { data, error } = await remote
     .from('tdr_analyses')
     .select('*')
     .eq('content_hash', contentHash(text))
+    .eq('analysis_version', analysisVersion)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -89,10 +92,11 @@ export async function findOwnAnalysisByText({ text, accessToken }) {
   return data ? mapRow(data) : null
 }
 
-export async function findSharedAnalysisByText({ text, accessToken }) {
+export async function findSharedAnalysisByText({ text, analysisVersion = 'legacy-v1', accessToken }) {
   const remote = getSupabase(accessToken)
-  const { data, error } = await remote.rpc('get_tdr_analysis_cache', {
+    const { data, error } = await remote.rpc('get_tdr_analysis_cache', {
     p_content_hash: contentHash(text),
+    p_analysis_version: analysisVersion,
   })
   if (error) throw error
   const row = Array.isArray(data) ? data[0] : data
@@ -105,7 +109,7 @@ export async function findSharedAnalysisByText({ text, accessToken }) {
     : null
 }
 
-export async function saveSharedAnalysis({ text, findings, summary, engine, accessToken }) {
+export async function saveSharedAnalysis({ text, findings, summary, engine, analysisVersion = 'legacy-v1', accessToken }) {
   const remote = getSupabase(accessToken)
   const { data, error } = await remote.rpc('save_tdr_analysis_cache', {
     p_content_hash: contentHash(text),
@@ -113,6 +117,7 @@ export async function saveSharedAnalysis({ text, findings, summary, engine, acce
     p_findings: findings,
     p_summary: summary,
     p_engine: engine || 'ollama-cloud',
+    p_analysis_version: analysisVersion,
   })
   if (error) throw error
   const row = Array.isArray(data) ? data[0] : data
@@ -128,7 +133,7 @@ export async function listAnalyses({ accessToken, limit = 20 }) {
   const remote = getSupabase(accessToken)
   const { data, error } = await remote
     .from('tdr_analyses')
-    .select('id,title,findings,summary,engine,created_at,content_hash')
+    .select('id,title,findings,summary,engine,analysis_version,created_at,content_hash')
     .order('created_at', { ascending: false })
     .limit(Math.min(Number(limit) || 20, 50))
   if (error) throw error
@@ -148,18 +153,10 @@ export async function getAnalysis({ id, accessToken }) {
 
 export async function deleteAnalysis({ id, accessToken }) {
   const remote = getSupabase(accessToken)
-  const { data: target, error: targetError } = await remote
-    .from('tdr_analyses')
-    .select('content_hash')
-    .eq('id', id)
-    .maybeSingle()
-  if (targetError) throw targetError
-  if (!target) return false
-
   const { data, error } = await remote
     .from('tdr_analyses')
     .delete()
-    .eq('content_hash', target.content_hash)
+    .eq('id', id)
     .select('id')
   if (error) throw error
   return Boolean(data?.length)
